@@ -1,0 +1,52 @@
+[
+  {
+    "name": "United States",
+    "latitude": 37.0902,
+    "longitude": -95.7129
+  },
+  {
+    "name": "Canada",
+    "latitude": 56.1304,
+    "longitude": -106.3468
+  },
+  {
+    "name": "Brazil",
+    "latitude": -14.2350,
+    "longitude": -51.9253
+  },
+  {
+    "name": "Russia",
+    "latitude": 61.5240,
+    "longitude": 105.3188
+  },
+  {
+    "name": "China",
+    "latitude": 35.8617,
+    "longitude": 104.1954
+  },
+  {
+    "name": "India",
+    "latitude": 20.5937,
+    "longitude": 78.9629
+  },
+  {
+    "name": "Australia",
+    "latitude": -25.2744,
+    "longitude": 133.7751
+  },
+  {
+    "name": "France",
+    "latitude": 46.2276,
+    "longitude": 2.2137
+  },
+  {
+    "name": "Germany",
+    "latitude": 51.1657,
+    "longitude": 10.4515
+  },
+  {
+    "name": "Japan",
+    "latitude": 36.2048,
+    "longitude": 138.2529
+  }
+] 
