@@ -1,13 +1,12 @@
 import React from 'react';
-import { ChakraProvider } from '@chakra-ui/react';
 import GeoGlobeGame from './components/GeoGlobeGame';
-import theme from './theme';
+import './index.css';
 
 function App() {
   return (
-    <ChakraProvider theme={theme}>
+    <div className="min-h-screen bg-background font-sans antialiased">
       <GeoGlobeGame />
-    </ChakraProvider>
+    </div>
   );
 }
 
