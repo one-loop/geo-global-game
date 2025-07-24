@@ -5,6 +5,7 @@ import countriesGeoJson from '../data/countries-50m.json';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
+import { Switch } from './ui/switch';
 import { cn } from '../lib/utils';
 
 const MAX_GUESSES = 10;
@@ -33,6 +34,14 @@ const GeoGlobeGame = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(true);
+  const [showDistanceGuide, setShowDistanceGuide] = useState(true);
+  const [showPreviousGuesses, setShowPreviousGuesses] = useState(true);
+  const [globeStyle, setGlobeStyle] = useState('default'); // 'default', 'satellite', 'dark'
+  const [selectedRegion, setSelectedRegion] = useState('all'); // 'all', 'europe', 'asia', etc.
+  const [distanceUnit, setDistanceUnit] = useState('km'); // 'km' or 'mi'
   const [stats, setStats] = useState({
     gamesPlayed: 0,
     gamesWon: 0,
@@ -51,6 +60,8 @@ const GeoGlobeGame = () => {
   const statsButtonRef = useRef(null);
   const infoModalRef = useRef(null);
   const infoButtonRef = useRef(null);
+  const settingsModalRef = useRef(null);
+  const settingsButtonRef = useRef(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
   const addToast = useCallback((toast) => {
@@ -121,6 +132,11 @@ const GeoGlobeGame = () => {
     const today = format(new Date(), 'yyyy-MM-dd');
     
     setStats(prevStats => {
+      // If the user has already played today, don't update stats
+      if (prevStats.lastPlayedDate === today) {
+        return prevStats;
+      }
+
       const newStats = { ...prevStats };
       
       // Update games played and won
@@ -205,7 +221,26 @@ const GeoGlobeGame = () => {
     return 'rgba(223, 242, 235, 0.8)';                        // Mint for very far
   }, []);
 
+  // Get random country for practice mode
+  const getRandomCountry = useCallback(() => {
+    const randomIndex = Math.floor(Math.random() * countryData.length);
+    return countryData[randomIndex];
+  }, []);
+
+  // Reset game state for practice mode
+  const resetPracticeGame = useCallback(() => {
+    setGuesses([]);
+    setGameOver(false);
+    setWon(false);
+    setCurrentGuess('');
+    setTargetCountry(getRandomCountry());
+  }, [getRandomCountry]);
+
+  // Modified handleGuess to hide suggestions
   const handleGuess = useCallback(() => {
+    // Hide suggestions when making a guess
+    setShowSuggestions(false);
+    
     if (isLoading || !targetCountry) {
       addToast({
         title: 'Game not ready',
@@ -284,15 +319,18 @@ const GeoGlobeGame = () => {
       if (distance === 0) {
         setWon(true);
         setGameOver(true);
-        updateStats(true, guesses.length + 1);
-        setShowStats(true);
-        addToast({
-          title: '🎉 Congratulations!',
-          description: `You found the correct country: ${targetCountry.name}! You did it in ${guesses.length + 1} ${guesses.length === 0 ? 'guess' : 'guesses'}!`,
-          status: 'success',
-          duration: 10000,
-        });
-      } else if (guesses.length + 1 >= MAX_GUESSES) {
+        if (!isPracticeMode) {
+          updateStats(true, guesses.length + 1);
+          setShowStats(true);
+        } else {
+          addToast({
+            title: '🎉 Congratulations!',
+            description: `You found ${targetCountry.name}! Click "Play Again" to try another country.`,
+            status: 'success',
+            duration: 5000,
+          });
+        }
+      } else if (!isPracticeMode && guesses.length + 1 >= MAX_GUESSES) {
         setGameOver(true);
         updateStats(false, MAX_GUESSES);
         addToast({
@@ -311,7 +349,7 @@ const GeoGlobeGame = () => {
         duration: 3000,
       });
     }
-  }, [currentGuess, targetCountry, guesses.length, addToast, isLoading, calculateCentroid, calculateDistance, getColorByDistance, updateStats]);
+  }, [currentGuess, targetCountry, guesses.length, addToast, isLoading, calculateCentroid, calculateDistance, getColorByDistance, updateStats, isPracticeMode]);
 
   // Create a list of country suggestions for the input
   const countryNames = useMemo(() => countryData.map(country => country.name), []);
@@ -337,6 +375,13 @@ const GeoGlobeGame = () => {
           !infoModalRef.current.contains(event.target) &&
           !infoButtonRef.current?.contains(event.target)) {
         setShowInfo(false);
+      }
+
+      // Handle settings modal - ignore clicks on the settings button
+      if (settingsModalRef.current && 
+          !settingsModalRef.current.contains(event.target) &&
+          !settingsButtonRef.current?.contains(event.target)) {
+        setShowSettings(false);
       }
     }
 
@@ -389,6 +434,7 @@ const GeoGlobeGame = () => {
         if (selectedIndex >= 0) {
           handleSuggestionClick(filteredCountries[selectedIndex]);
         } else {
+          setShowSuggestions(false);
           handleGuess();
         }
         break;
@@ -407,6 +453,30 @@ const GeoGlobeGame = () => {
     setShowSuggestions(false);
     setSelectedIndex(-1);
     inputRef.current?.focus();
+  };
+
+  // Helper function to convert distance based on selected unit
+  const formatDistance = (distanceKm) => {
+    if (distanceUnit === 'mi') {
+      return `${Math.round(distanceKm * 0.621371)} mi`;
+    }
+    return `${Math.round(distanceKm)} km`;
+  };
+
+  // Region definitions
+  const regions = {
+    all: { name: 'All Countries', description: 'Countries from all continents' },
+    europe: { name: 'Europe', description: 'European countries only' },
+    asia: { name: 'Asia', description: 'Asian countries only' },
+    americas: { name: 'Americas', description: 'North and South American countries' },
+    africa: { name: 'Africa', description: 'African countries only' },
+    oceania: { name: 'Oceania', description: 'Oceanian countries only' }
+  };
+
+  // Filter countries based on selected region
+  const getFilteredCountries = () => {
+    if (selectedRegion === 'all') return countryData;
+    return countryData.filter(country => country.region === selectedRegion);
   };
 
   const StatsModal = () => {
@@ -483,7 +553,7 @@ const GeoGlobeGame = () => {
           </button>
         </div>
         <div className="space-y-4 text-white/80">
-          <p>Welcome to Geo Globe Game! Try to guess the mystery country in 6 tries or less.</p>
+          <p>Welcome to Globle! Try to guess the mystery country in 6 tries or less.</p>
           
           <div className="grid grid-cols-2 gap-6">
             <div className="space-y-4">
@@ -537,12 +607,203 @@ const GeoGlobeGame = () => {
     );
   };
 
+  // Settings Modal Component
+  const SettingsModal = () => {
+    return (
+      <div ref={settingsModalRef} className="bg-[#1a1a1a] rounded-xl w-[90%] max-w-md border border-[#232323] flex flex-col max-h-[85vh]">
+        {/* Fixed Header */}
+        <div className="p-8 pb-4 border-b border-[#232323]">
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-['EB Garamond'] text-white">Settings</h2>
+            <button 
+              onClick={() => setShowSettings(false)}
+              className="text-white/60 hover:text-white/80 transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-8 pt-4 space-y-6 custom-scrollbar">
+          {/* Game Modes */}
+          <div className="space-y-4">
+            <h3 className="text-white/90 text-lg font-semibold">Game Modes</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-white font-semibold">Practice Mode</h4>
+                <p className="text-white/60 text-sm mt-1">Play unlimited games with random countries</p>
+              </div>
+              <Switch
+                checked={isPracticeMode}
+                onCheckedChange={(checked) => {
+                  setIsPracticeMode(checked);
+                  if (checked) {
+                    resetPracticeGame();
+                  } else {
+                    window.location.reload();
+                  }
+                }}
+                className="ml-4"
+              />
+            </div>
+
+            {isPracticeMode && (
+              <div className="space-y-2 mt-4">
+                <h4 className="text-white font-semibold">Region Selection</h4>
+                <p className="text-white/60 text-sm mb-3">Choose which region to practice</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(regions).map(([key, { name }]) => (
+                    <button
+                      key={key}
+                      onClick={() => setSelectedRegion(key)}
+                      className={cn(
+                        "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                        selectedRegion === key
+                          ? "bg-[#4A628A] text-white"
+                          : "bg-white/10 text-white/60 hover:bg-white/20"
+                      )}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Globe Settings */}
+          <div className="space-y-4">
+            <h3 className="text-white/90 text-lg font-semibold">Globe Settings</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-white font-semibold">Auto-Rotate</h4>
+                <p className="text-white/60 text-sm mt-1">Globe automatically rotates when idle</p>
+              </div>
+              <Switch
+                checked={autoRotate}
+                onCheckedChange={setAutoRotate}
+                className="ml-4"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-white font-semibold">Globe Style</h4>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setGlobeStyle('default')}
+                  className={cn(
+                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                    globeStyle === 'default' 
+                      ? "bg-[#4A628A] text-white" 
+                      : "bg-white/10 text-white/60 hover:bg-white/20"
+                  )}
+                >
+                  Default
+                </button>
+                <button
+                  onClick={() => setGlobeStyle('satellite')}
+                  className={cn(
+                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                    globeStyle === 'satellite' 
+                      ? "bg-[#4A628A] text-white" 
+                      : "bg-white/10 text-white/60 hover:bg-white/20"
+                  )}
+                >
+                  Satellite
+                </button>
+                <button
+                  onClick={() => setGlobeStyle('dark')}
+                  className={cn(
+                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                    globeStyle === 'dark' 
+                      ? "bg-[#4A628A] text-white" 
+                      : "bg-white/10 text-white/60 hover:bg-white/20"
+                  )}
+                >
+                  Dark
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Interface Settings */}
+          <div className="space-y-4">
+            <h3 className="text-white/90 text-lg font-semibold">Interface</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-white font-semibold">Distance Guide</h4>
+                <p className="text-white/60 text-sm mt-1">Show color guide for distances</p>
+              </div>
+              <Switch
+                checked={showDistanceGuide}
+                onCheckedChange={setShowDistanceGuide}
+                className="ml-4"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-white font-semibold">Previous Guesses</h4>
+                <p className="text-white/60 text-sm mt-1">Show list of previous guesses</p>
+              </div>
+              <Switch
+                checked={showPreviousGuesses}
+                onCheckedChange={setShowPreviousGuesses}
+                className="ml-4"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-white font-semibold">Distance Unit</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setDistanceUnit('km')}
+                  className={cn(
+                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                    distanceUnit === 'km'
+                      ? "bg-[#4A628A] text-white"
+                      : "bg-white/10 text-white/60 hover:bg-white/20"
+                  )}
+                >
+                  Kilometers
+                </button>
+                <button
+                  onClick={() => setDistanceUnit('mi')}
+                  className={cn(
+                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                    distanceUnit === 'mi'
+                      ? "bg-[#4A628A] text-white"
+                      : "bg-white/10 text-white/60 hover:bg-white/20"
+                  )}
+                >
+                  Miles
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Fixed Footer */}
+        <div className="p-8 pt-4 border-t border-[#232323]">
+          <p className="text-white/40 text-sm">Settings are automatically saved to your device</p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-background">
       {/* Globe */}
       <div className="absolute inset-0 z-10">
         <Globe
-          globeImageUrl="//unpkg.com/three-globe/example/img/earth-day.jpg"
+          globeImageUrl={
+            globeStyle === 'satellite' 
+              ? "//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+              : globeStyle === 'dark'
+                ? "//unpkg.com/three-globe/example/img/earth-night.jpg"
+                : "//unpkg.com/three-globe/example/img/earth-day.jpg"
+          }
           backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
           polygonsData={guesses}
           polygonAltitude={0.01}
@@ -555,7 +816,7 @@ const GeoGlobeGame = () => {
           atmosphereAltitude={0.15}
           enablePointerInteraction={true}
           dragRotate={true}
-          autoRotate={true}
+          autoRotate={autoRotate}
           autoRotateSpeed={0.35}
           zoomOnScroll={true}
           minZoom={0.5}
@@ -563,7 +824,7 @@ const GeoGlobeGame = () => {
           rotateSpeed={0.8}
           enableGlobeCover={true}
           globeCoverAltitude={0.015}
-          globeCoverColor="rgba(0, 0, 0, 0.6)"
+          globeCoverColor={globeStyle === 'dark' ? "rgba(0, 0, 0, 0.8)" : "rgba(0, 0, 0, 0.6)"}
           polygonLabel={({ properties }) =>
             `<div class="bg-popover/95 text-popover-foreground p-3 rounded-lg shadow-lg">
               <div class="font-semibold mb-1">${properties.name}</div>
@@ -578,7 +839,7 @@ const GeoGlobeGame = () => {
         <div className="container max-w-4xl mx-auto">
           <div className="flex justify-between items-center">
             <h1 className="text-3xl font-bold tracking-tight text-white font-['EB Garamond']">
-              Geo Globe Game
+              Globle {isPracticeMode && <span className="text-[#4A628A] ml-2">(Practice)</span>}
             </h1>
             <div className="flex items-center gap-4">
               <button
@@ -595,9 +856,18 @@ const GeoGlobeGame = () => {
               >
                 ℹ️ How to Play
               </button>
-              <Badge variant="secondary" className="py-2 px-5 bg-white/10 text-white font-medium text-sm border border-white/10 shadow-lg">
-                {MAX_GUESSES - guesses.length} Guesses Left
-              </Badge>
+              <button
+                ref={settingsButtonRef}
+                onClick={() => setShowSettings(!showSettings)}
+                className="bg-[#1a1a1a] hover:bg-[#232323] text-white border border-[#232323] h-10 px-4 rounded-lg"
+              >
+                ⚙️ Settings
+              </button>
+              {!isPracticeMode && (
+                <Badge variant="secondary" className="py-2 px-5 bg-white/10 text-white font-medium text-sm border border-white/10 shadow-lg">
+                  {MAX_GUESSES - guesses.length} Guesses Left
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -617,7 +887,14 @@ const GeoGlobeGame = () => {
         </div>
       )}
 
-      {/* Game Over Message */}
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <SettingsModal />
+        </div>
+      )}
+
+      {/* Game Over Message - Modified for practice mode */}
       {gameOver && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20 bg-[#1a1a1a]/95 p-10 rounded-2xl border border-[#232323] shadow-2xl backdrop-blur-md max-w-md w-[90%] text-center">
           <h2 className={cn(
@@ -632,10 +909,26 @@ const GeoGlobeGame = () => {
               : `The country was ${targetCountry?.name}`
             }
           </p>
-          {won && (
+          <a 
+            href={`https://en.wikipedia.org/wiki/${targetCountry?.name}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block mt-2 mb-6 text-[#7AB2D3] hover:text-[#7AB2D3]/80 transition-colors underline text-lg"
+          >
+            Learn more about {targetCountry?.name} on Wikipedia
+          </a>
+          {won && !isPracticeMode && (
             <p className="text-[#B9E5E8]/80 text-lg font-light">
               Come back tomorrow for a new challenge!
             </p>
+          )}
+          {isPracticeMode && (
+            <button
+              onClick={resetPracticeGame}
+              className="mt-6 bg-[#4A628A] hover:bg-[#4A628A]/90 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+            >
+              Play Again
+            </button>
           )}
         </div>
       )}
@@ -645,22 +938,19 @@ const GeoGlobeGame = () => {
         <div className="container max-w-2xl mx-auto px-4">
           <div className="space-y-5">
             {/* Previous Guesses */}
-            {guesses.length > 0 && (
+            {showPreviousGuesses && guesses.length > 0 && (
               <div className="w-full overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-white/5">
                 <div className="flex gap-2.5 pb-1">
                   {guesses.map((guess, index) => (
-                    <Badge
+                    <div
                       key={index}
-                      variant="outline"
-                      className="py-2 px-4 whitespace-nowrap h-8 flex items-center gap-2 bg-black/40 backdrop-blur-sm border-white/10 text-white shadow-lg"
-                      style={{
-                        backgroundColor: guess.color,
-                        color: 'white'
-                      }}
+                      className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-lg text-sm"
                     >
-                      <span className="font-medium">{guess.properties.name}</span>
-                      <span className="opacity-90 text-[11px] font-medium">{Math.round(guess.properties.distance)} km</span>
-                    </Badge>
+                      <span className="text-white/90">{guess.properties.name}</span>
+                      <span className="text-white/60">
+                        {formatDistance(guess.properties.distance)}
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -713,33 +1003,29 @@ const GeoGlobeGame = () => {
       </div>
 
       {/* Color Legend */}
-      <div className="absolute top-4 right-4 z-20 bg-black/80 p-5 rounded-2xl border border-white/20 shadow-xl backdrop-blur-sm">
-        <h3 className="text-sm font-semibold mb-3 text-white/90">
-          Distance Guide
-        </h3>
-        <div className="space-y-2.5">
-          <div className="flex items-center gap-3">
-            <div className="w-4 h-4 rounded-full bg-[rgba(52,211,153,0.8)] shadow-sm" />
-            <span className="text-sm text-white/80">Correct</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="w-4 h-4 rounded-full bg-[rgba(74,98,138,0.8)] shadow-sm" />
-            <span className="text-sm text-white/80">&lt; 1000 km</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="w-4 h-4 rounded-full bg-[rgba(122,178,211,0.8)] shadow-sm" />
-            <span className="text-sm text-white/80">&lt; 2500 km</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="w-4 h-4 rounded-full bg-[rgba(185,229,232,0.8)] shadow-sm" />
-            <span className="text-sm text-white/80">&lt; 5000 km</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="w-4 h-4 rounded-full bg-[rgba(223,242,235,0.8)] shadow-sm" />
-            <span className="text-sm text-white/80">&gt; 5000 km</span>
+      {showDistanceGuide && (
+        <div className="absolute top-4 right-4 z-20 bg-black/80 p-5 rounded-2xl border border-white/20 shadow-xl backdrop-blur-sm">
+          <h3 className="text-sm font-semibold mb-3 text-white/90">Distance Guide</h3>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded-full bg-[#4a628acc]"></div>
+              <span className="text-sm text-white/80">Less than {formatDistance(1000)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded-full bg-[#7ab2d3cc]"></div>
+              <span className="text-sm text-white/80">Less than {formatDistance(2500)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded-full bg-[#b9e5e8cc]"></div>
+              <span className="text-sm text-white/80">Less than {formatDistance(5000)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded-full bg-[#b9e5e8cc]"></div>
+              <span className="text-sm text-white/80">More than {formatDistance(5000)}</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Toast Messages */}
       <div className="fixed top-4 right-4 z-50 space-y-3">
